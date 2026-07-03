@@ -1,0 +1,17 @@
+# Core (required) — the project runs offline with just these.
+numpy>=1.24
+
+# Optional local backend: real embeddings + reranker. If absent, the project
+# falls back to deterministic hashed embeddings and a lexical reranker.
+# sentence-transformers>=2.2
+
+# Optional fast vector search. If absent, a NumPy exact search is used.
+# faiss-cpu>=1.7
+
+# Optional Azure / OpenAI production path.
+# openai>=1.30
+# azure-search-documents>=11.4
+# python-dotenv>=1.0
+
+# Dev
+pytest>=7.0
