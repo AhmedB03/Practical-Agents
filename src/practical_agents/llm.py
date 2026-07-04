@@ -26,7 +26,7 @@ class LLM:
         self.settings = settings
         self.provider = settings.llm_provider
         self._client = None
-        if self.provider in ("azure", "openai"):
+        if self.provider in ("azure", "openai", "groq"):
             self._client = _client(settings)
 
     def chat(self, system: str, user: str, model: str | None = None) -> dict:
@@ -117,6 +117,12 @@ def _approx_tokens(text: str) -> int:
     return max(1, int(len(text.split()) * 1.3))
 
 
+# Free tiers (esp. Groq) enforce tight tokens-per-minute limits. The OpenAI SDK
+# honors 429 Retry-After headers and backs off, so a generous retry budget lets
+# a long eval pace itself under the limit instead of crashing.
+_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "12"))
+
+
 @lru_cache(maxsize=1)
 def _client(settings):  # pragma: no cover - needs network
     if settings.llm_provider == "azure":
@@ -126,7 +132,15 @@ def _client(settings):  # pragma: no cover - needs network
             api_key=os.environ["AZURE_OPENAI_API_KEY"],
             azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
             api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-06-01"),
+            max_retries=_MAX_RETRIES,
         )
     from openai import OpenAI
 
-    return OpenAI()
+    if settings.llm_provider == "groq":
+        # Groq exposes an OpenAI-compatible API; only base_url + key differ.
+        return OpenAI(
+            api_key=os.environ["GROQ_API_KEY"],
+            base_url=os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1"),
+            max_retries=_MAX_RETRIES,
+        )
+    return OpenAI(max_retries=_MAX_RETRIES)

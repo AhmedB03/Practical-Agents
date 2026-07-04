@@ -63,7 +63,15 @@ def load_settings(**overrides) -> Settings:
     chunk_tokens, ...) without mutating the environment.
     """
     # ---- LLM provider ----
-    if _env("AZURE_OPENAI_API_KEY") and _env("AZURE_OPENAI_ENDPOINT"):
+    # Groq is checked first: it's an explicit opt-in (GROQ_API_KEY) and should win
+    # over a stale OPENAI_API_KEY lingering in the shell environment. Groq serves
+    # chat via an OpenAI-compatible endpoint but has no embeddings API, so the
+    # embedding block below falls through to the local embedder.
+    if _env("GROQ_API_KEY"):
+        llm_provider = "groq"
+        chat_model = _env("GROQ_CHAT_MODEL") or "llama-3.3-70b-versatile"
+        judge_model = _env("GROQ_JUDGE_MODEL") or chat_model
+    elif _env("AZURE_OPENAI_API_KEY") and _env("AZURE_OPENAI_ENDPOINT"):
         llm_provider = "azure"
         chat_model = _env("AZURE_OPENAI_CHAT_DEPLOYMENT") or "gpt-4o-mini"
         judge_model = _env("AZURE_OPENAI_JUDGE_DEPLOYMENT") or chat_model
