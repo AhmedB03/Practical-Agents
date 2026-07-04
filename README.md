@@ -53,30 +53,50 @@ python scripts/demo.py "How many retries by default?"
 
 ## Architecture
 
-```
-                      ┌─────────────────────────────────────────┐
-   question ─────────▶│                 Agent                    │
-                      │  (plans, calls search_docs 0..N times,   │
-                      │   decides when it has enough context)    │
-                      └───────┬───────────────────────┬──────────┘
-                              │ search_docs(query)     │ answer
-                              ▼                        ▼
-                     ┌─────────────────┐      grounded answer + citations
-                     │    Retriever    │
-                     │  embed → top-k  │
-                     │  → (rerank)     │
-                     └────────┬────────┘
-                              ▼
-                     ┌─────────────────┐     Backends (auto-selected):
-                     │  Vector Store   │      • Azure AI Search  (prod)
-                     │  FAISS / Azure  │      • FAISS + local ST (default)
-                     └─────────────────┘
+The agent decides *whether* and *how often* to search, retrieves from a swappable
+vector store, and answers only from what it found. An evaluation harness wraps the
+whole thing and scores every answer. (Diagram source: [`docs/architecture.mmd`](docs/architecture.mmd).)
 
-   Everything above is measured by  eval/  ─────────────────────────────┐
-   • retrieval:  recall@k, MRR, context precision                       │
-   • answer:     correctness (judge), faithfulness/groundedness (judge) │
-   • behavior:   abstention accuracy, avg tool calls                    │
-   • ops:        latency p50/p95, token cost per query                  │
+```mermaid
+graph TD
+    Q([User question]) --> AG
+
+    subgraph RUNTIME[Runtime: agentic RAG]
+        direction TB
+        AG[Agent - plans and decides] -->|search_docs 0..N| R[Retriever - embed, top-k, optional rerank]
+        R --> VS{Vector store}
+        VS -->|default / offline| LOC[FAISS + local embeddings]
+        VS -->|production| AZ[Azure AI Search + Azure OpenAI]
+        R -->|retrieved context| AG
+        AG -->|grounded answer + citations| ANS([Answer])
+    end
+
+    subgraph IDX[Indexing]
+        direction TB
+        COR[Corpus - markdown docs] -->|chunk + embed| ING[Ingest]
+    end
+    ING --> VS
+
+    subgraph EVAL[Evaluation harness]
+        direction TB
+        GOLD[(Golden QA set)] --> EV[Eval harness - wraps the agent]
+        EV --> REP[Report - eval/results/]
+    end
+
+    EV -.->|runs every question| AG
+    ANS -.->|graded| EV
+
+    subgraph MET[Measured on every answer]
+        direction TB
+        M1[Retrieval: recall@k, MRR, context precision]
+        M2[Answer: correctness + faithfulness via LLM judge]
+        M3[Behavior: abstention accuracy, avg tool calls]
+        M4[Operations: latency p50/p95, cost per query]
+    end
+    EV --> M1
+    EV --> M2
+    EV --> M3
+    EV --> M4
 ```
 
 ## Evaluation
